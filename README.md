@@ -1,5 +1,7 @@
 # J.O.O.N.A.S. Backpack
 
+<img src="media/icon.png" alt="J.O.O.N.A.S. Backpack icon" width="128" height="128">
+
 Buy the backpack in Modded Shop after its late-game upgrade requirement.
 
 ## Install
