@@ -1,0 +1,34 @@
+{
+  "id": "joonas-backpack",
+  "kind": "native",
+  "version": "0.3.0",
+  "display_name": "J.O.O.N.A.S. Backpack",
+  "gameplay": true,
+  "feature_dependencies": [
+    "shop-framework",
+    "equipment-framework",
+    "hints-framework"
+  ],
+  "play_help": [
+    "Buy the backpack in Modded Shop after its late-game upgrade requirement.",
+    "Select its Equipment hotbar slot to deploy the textured RoboScrub backpack and rigid sweeping arms.",
+    "Native shop/equipment integration implemented; gameplay testing deferred."
+  ],
+  "requires_apis": [
+    {
+      "api": "shop-framework.shop",
+      "abi": 1,
+      "min_size": 56
+    },
+    {
+      "api": "equipment-framework.equipment",
+      "abi": 1,
+      "min_size": 32
+    },
+    {
+      "api": "hints-framework.hints",
+      "abi": 1,
+      "min_size": 24
+    }
+  ]
+}
