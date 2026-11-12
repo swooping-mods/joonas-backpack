@@ -19,11 +19,11 @@ void *memset(void *to,int value,U64 count){unsigned char *p=to;while(count--)*p+
 static void config_initialize(void){cfg_start();}static int configured_enabled(void){return cfg.enabled;}
 static struct {
     PTR time,visible_dust,levels,total,register_storage,storage_mass,clean,find_catcher,reserve,forget,take,launch,flight,component_go,terrain,request_save;
-    SURoot root,orange,capsule_mat,arms[4],brushes[2],storage;SMResources model;
-    SPVec3 previous[2],display[2],normal[2];int contact[2],posed[2],equipped,registered;float phase,timer,retry,visual_retry;double kilograms;unsigned shots;
+    SURoot root,orange,capsule_mat,arms[4],brushes[2],storage,capsule;SMResources model;
+    SPVec3 previous[2],display[2],normal[2];int contact[2],posed[2],equipped,registered,suspended,cleanup_failed;char owner[128];float phase,timer,retry,visual_retry;double kilograms;unsigned shots;
 } bp;
-static int feature_can_buy(PTR world){int ok=1;PTR player=call(tt.player,0,0,&ok);void *args[]={player};PTR owned=call(bp.levels,world,args,&ok);int total=integer(bp.total,world,&ok),levels=owned?*(int *)unbox(owned):0;if(!ok||levels<12||levels*2<total||total<1){tt.status="Late game: own at least 12 and half of all upgrade levels";return 0;}return 1;}
-static PTR bp_part(PTR parent,SPVec3 p,SPVec3 scale,PTR material){return tt_primitive(parent,3,p,scale,material);}
+#include "state.h"
+#include "capsule.h"
 static void bp_hide(void){
     su_destroy(su_get(bp.root));su_drop(&bp.root);
     for(unsigned i=0;i<4;i++)su_drop(&bp.arms[i]);
@@ -32,8 +32,6 @@ static void bp_hide(void){
 static int bp_visual(PTR walker,int show){
     if(!show){bp_hide();return 0;}if(bp.root)return 1;
     if(bp.visual_retry>0)return 0;bp.visual_retry=2;
-    if(!bp.orange)bp.orange=su_hold(tt_material((SUColor){.88f,.45f,.10f,1}));
-    if(!bp.capsule_mat)bp.capsule_mat=su_hold(tt_material((SUColor){.35f,.67f,.79f,1}));
     if(!sm_prepare_pbr(&bpm_model,&bp.model,bpm_pbr,7))return 0;
     PTR root=sm_attach(&bpm_model,&bp.model,tt_transform(walker),2,"Wearable RoboScrub J.O.O.N.A.S.");
     bp.root=su_hold(root);if(!bp.root){su_destroy(root);return 0;}
@@ -53,24 +51,15 @@ static void bp_segment(PTR go,SPVec3 a,SPVec3 b,SPVec3 facing){
     su_set_quat(su.tr_rotation,tr,su_rotation(su_normal(su_sub(b,a)),su_mul(facing,-1)));
 }
 static int bp_ground(PTR world,SPVec3 at,SPVec3 up,SPVec3 *point,SPVec3 *surface){unsigned char hit[64];if(!tt_ray(su_add(at,su_mul(up,1.8f)),su_mul(up,-1),3.5f,hit))return 0;int ok=1;PTR collider=call(su.hit_collider,hit,0,&ok);void *args[]={collider};PTR terrain=call(bp.terrain,world,args,&ok);if(!ok||!terrain||!*(unsigned char *)unbox(terrain))return 0;SPVec3 normal;su_copy(point,hit+su.hit_point,sizeof(*point));su_copy(&normal,hit+su.hit_normal,sizeof(normal));void *height_args[]={point};PTR height=call(bp.visible_dust,world,height_args,&ok);if(!ok||!height)return 0;float h=*(float *)unbox(height);if(!(h>=0&&h<20))return 0;*point=su_add(*point,su_mul(up,h));*surface=su_normal(normal);return su_dot(up,*surface)>.85f;}
-static void bp_register(PTR world){
-    if(bp.registered||!tt.owned||!tt_host())return;int ok=1;char id[128],player_id[128];PTR player=call(tt.player,0,0,&ok);if(!ok||!su_string(player,player_id,sizeof(player_id)))return;unsigned n=0;while(player_id[n])n++;char *p=cat(id,"moonlab.joonas-backpack.");num(p,tt_hash((unsigned char *)player_id,n));bp.storage=su_hold(su.string(id));double capacity=20;void *args[]={su_get(bp.storage),&capacity};call(bp.register_storage,world,args,&ok);if(ok){bp.registered=1;tt_event("storage-registered");}else su_drop(&bp.storage);
+static void feature_drop(void){
+    bp_hide();sm_release(&bp.model);
+    bp.registered=bp.equipped=0;su_drop(&bp.storage);bp.owner[0]=0;
+    bp.timer=bp.retry=bp.phase=bp.visual_retry=0;bp.kilograms=0;bp.shots=0;
+    (void)bp_capsule_release();
 }
-static double bp_mass(PTR world,int *ok){void *args[]={su_get(bp.storage)};PTR kg=call(bp.storage_mass,world,args,ok);if(!kg){*ok=0;return 0;}return *(double *)unbox(kg);}
-static void bp_launch(PTR walker,PTR world){
-    if(bp.retry>0||bp.kilograms<19.999)return;bp.retry=2;int ok=1,catcher=-1;SPVec3 up=su_vector(su.tr_up,tt_transform(walker)),from=su_add(su_vector(su.tr_get_position,tt_transform(walker)),su_mul(up,2.1f)),target={0},target_up={0};void *find[]={&from,&catcher,&target,&target_up};PTR result=call(bp.find_catcher,world,find,&ok);if(!ok||!result||!*(unsigned char *)unbox(result)){tt.status="Capsule full: waiting for a compatible catcher";return;}
-    void *time_args[]={&from,&target};PTR duration=call(bp.flight,0,time_args,&ok);if(!ok||!duration)return;float arrival=su_number(bp.time,0)+*(float *)unbox(duration);void *reserve[]={&catcher,&arrival};PTR booked=call(bp.reserve,world,reserve,&ok);if(!ok||!booked)return;arrival=*(float *)unbox(booked);
-    /* This original capsule uses the game's own J.O.O.N.A.S. flight component.
-     * It owns routing, arrival, catcher animation and the actual dust deposit. */
-    PTR go=su_gameobject("Backpack launched dust capsule",0);SURoot hold=su_hold(go);PTR capsule=tt_component(go,"MoonCleaners","MoonLaunchCapsule");PTR tr=su_transform(go);bp_part(tr,su_v(0,0,0),su_v(.35f,.7f,.35f),su_get(bp.capsule_mat));bp_part(tr,su_v(0,-.38f,0),su_v(.23f,.12f,.23f),su_get(bp.orange));
-    PTR owner=call(tt.player,0,0,&ok);double dust=bp.kilograms<20?bp.kilograms:20;void *args[]={world,&catcher,&from,&up,&arrival,owner,&dust};if(capsule)call(bp.launch,capsule,args,&ok);else ok=0;
-    if(ok){void *withdraw[]={su_get(bp.storage),&dust};PTR withdrawn=call(bp.take,world,withdraw,&ok);double taken=withdrawn?*(double *)unbox(withdrawn):0;if(!ok||taken!=dust)ok=0;}
-    if(!ok){su_destroy(go);int release_ok=1;void *release[]={&catcher,&arrival};call(bp.forget,world,release,&release_ok);tt.status="Capsule launch refused";tt_event("launch-refused");}else{call(bp.request_save,world,0,&ok);bp.shots++;tt.status="Full capsule launched to catcher";tt_event("capsule-launched");}su_drop(&hold);
-}
-static void feature_drop(void){bp_hide();sm_release(&bp.model);su_destroy(su_get(bp.orange));su_destroy(su_get(bp.capsule_mat));su_drop(&bp.orange);su_drop(&bp.capsule_mat);su_drop(&bp.storage);bp.registered=bp.equipped=0;bp.timer=bp.retry=bp.phase=bp.visual_retry=0;bp.contact[0]=bp.contact[1]=0;bp.kilograms=0;bp.shots=0;}
 static void feature_tick(PTR walker,PTR world,int allow){
-    if(cfg.enabled)bp_register(world);bp.equipped=allow&&tt.owned;int active=allow&&bp.equipped&&tt.owned&&bp.registered&&tt_host();bp.visual_retry-=tt.dt;if(!bp_visual(walker,active))active=0;bp.timer+=tt.dt;bp.retry-=tt.dt;if(!active){bp.contact[0]=bp.contact[1]=0;tt_shop_text("Select backpack in Equipment\nOwn 20 kg capsule; full loads launch to normal catchers");return;}
-    int ok=1;bp.kilograms=bp_mass(world,&ok);if(!ok)return;bp_launch(walker,world);SPVec3 origin=su_vector(su.tr_get_position,tt_transform(walker)),up=su_vector(su.tr_up,tt_transform(walker)),forward=su_vector(su.tr_forward,tt_transform(walker)),right=su_normal(su_cross(up,forward));
+    if(allow)bp_register(world);bp.equipped=allow&&tt.owned;int active=allow&&bp.equipped&&bp.registered&&bp_authorized(world);bp.visual_retry-=tt.dt;if(!bp_visual(walker,active))active=0;bp.timer+=tt.dt;bp.retry-=tt.dt;if(!active){bp.contact[0]=bp.contact[1]=0;tt_shop_text(bp.suspended?(tt.status?tt.status:"Backpack suspended after cleanup failure; restart required"):"Select backpack in Equipment\nOwn 20 kg capsule; full loads launch to normal catchers");return;}
+    int ok=1;bp.kilograms=bp_mass(world,&ok);if(!ok){bp_suspend("Storage mass unavailable or invalid");return;}bp_launch(walker,world);if(!bp_authorized(world))return;SPVec3 origin=su_vector(su.tr_get_position,tt_transform(walker)),up=su_vector(su.tr_up,tt_transform(walker)),forward=su_vector(su.tr_forward,tt_transform(walker)),right=su_normal(su_cross(up,forward));
     bp.phase+=tt.dt*.6f;if(bp.phase>=8)bp.phase-=8;
     int sweep=bp.timer>=.2f;if(sweep)bp.timer=0;
     for(unsigned i=0;i<2;i++){
@@ -98,7 +87,9 @@ static void feature_tick(PTR walker,PTR world,int allow){
             SPVec3 from=bp.contact[i]?bp.previous[i]:shown;SPVec3 delta=su_sub(from,shown);if(su_dot(delta,delta)>.16f)from=shown;
             float width=bpm_arm[i].width,depth=bpm_arm[i].depth,dose=.07f,edge=.04f;PTR player=call(tt.player,0,0,&ok);
             void *args[]={&from,&shown,&brush_right,&brush_right,&width,&depth,&dose,&edge,&brush_forward,player,su_get(bp.storage)};
-            call(bp.clean,world,args,&ok);bp.previous[i]=shown;bp.contact[i]=1;
+            if(!ok||!player){bp_suspend("Cleaning player unavailable");return;}
+            if(!bp_clean_stroke(world,args))return;
+            bp.previous[i]=shown;bp.contact[i]=1;
         }else if(!contact)bp.contact[i]=0;
     }
     char b[300],*p=cat(b,"Autonomous sweeper arms\nCapsule ");p=num(p,(U64)bp.kilograms);p=cat(p," / 20 kg  |  shots ");p=num(p,bp.shots);if(tt.status){p=cat(p,"\n");cat(p,tt.status);}tt_shop_text(b);

@@ -1,2 +1,14 @@
-Small Loop Works: mod and shared adapter code.
-Moon Sweepers: DragDrop Games.
+RoboScrub Backpack model supplied by the user for local J.O.O.N.A.S. Backpack use.
+Original filename: Meshy_AI_RoboScrub_Backpack_1110073221_texture.glb(2).glb
+SHA-256: 1202053dbabee2bd0c5a9a072e9b33595193ff87d26e58ff2b7f85aa1537c119
+GLB generator metadata: Tripo. Filename identifies Meshy; account/license
+documents were not supplied. No independent redistribution license established.
+Original and derived mesh/texture data remain private and ignored.
+
+First-party conversion preserves all vertices, UV seams, the embedded color JPEG
+and full-resolution normal channels (green inverted for Unity's reflected frame).
+Twenty-one zero-area source triangles are omitted. Seven rigid part owners use
+measured pivots and positive uniform fit scales. No model-generation or external
+dependency download was required. NumPy, Pillow and F3D are installed tools and
+are not bundled. Capsule flight continues to reference native game behavior;
+no game-owned mesh or audio data is redistributed.
